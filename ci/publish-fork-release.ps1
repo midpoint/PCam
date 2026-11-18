@@ -55,14 +55,18 @@ InvokeGh -Arguments @('run', 'download', $env:GITHUB_RUN_ID, '--repo', $repo, '-
 # The Android package is the signed build published by the upstream project;
 # copy that exact file so both repositories offer the same installer.
 $upstream = 'hyyh0144/PCam'
-$query = '.[] | select((.draft | not) and (.prerelease | not) and (.tag_name | endswith("-android-v' + $androidVersion + '")))'
-$found = (InvokeGh -Arguments @('api', "repos/$upstream/releases?per_page=100", '--paginate', '--jq', $query)) -join "`n"
-$upstreamRelease = $found -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json } | Select-Object -First 1
-if (!$upstreamRelease) { throw "No upstream release provides Android $androidVersion." }
+$tags = InvokeGh -Arguments @('api', "repos/$upstream/releases?per_page=100", '--paginate', '--jq', '.[] | .tag_name')
+$upstreamTag = @($tags | Where-Object { $_ -like "*-android-v$androidVersion" })[0]
+if (!$upstreamTag) { throw "No upstream release provides Android $androidVersion." }
+$assets = InvokeGh -Arguments @('api', "repos/$upstream/releases/tags/$upstreamTag", '--jq', '.assets[] | "\(.name) \(.browser_download_url)"')
+$urls = @{}
+foreach ($asset in $assets) {
+    $parts = $asset -split ' ', 2
+    if ($parts.Count -eq 2) { $urls[$parts[0]] = $parts[1] }
+}
 foreach ($name in @($apk, $sumsAndroid)) {
-    $match = @($upstreamRelease.assets | Where-Object { $_.name -eq $name })
-    if ($match.Count -ne 1) { throw "Upstream release $($upstreamRelease.tag_name) is missing $name." }
-    Invoke-WebRequest -Uri $match[0].browser_download_url -OutFile (Join-Path $work $name)
+    if (!$urls.ContainsKey($name)) { throw "Upstream release $upstreamTag is missing $name." }
+    Invoke-WebRequest -Uri $urls[$name] -OutFile (Join-Path $work $name)
 }
 foreach ($path in @(($names | ForEach-Object { Join-Path $work $_ }))) {
     if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Artifact is missing $([IO.Path]::GetFileName($path))." }
