@@ -18,8 +18,14 @@ public static class CameraInstallation
     public static readonly string Version = typeof(CameraInstallation).Assembly.GetName().Version!.ToString(3);
     static readonly SecurityIdentifier Administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
     static readonly SecurityIdentifier SystemAccount = new(WellKnownSidType.LocalSystemSid, null);
-    static readonly Lazy<byte[]> EmbeddedDll = new(ReadPayload);
-    static readonly Lazy<string> PayloadHash = new(() => Convert.ToHexString(SHA256.HashData(EmbeddedDll.Value)));
+    static readonly Lazy<byte[]> EmbeddedDll = new(() => ReadPayload("PCam.Camera.dll"));
+    // 32-bit twin of the filter: 32-bit consumers (ManyCam and other older
+    // DirectShow apps) enumerate and load only the 32-bit registry view.
+    static readonly Lazy<byte[]> EmbeddedDll32 = new(() => ReadPayload("PCam.Camera32.dll"));
+    static readonly Lazy<string> Hash64 = new(() => Convert.ToHexString(SHA256.HashData(EmbeddedDll.Value)));
+    static readonly Lazy<string> Hash32 = new(() => Convert.ToHexString(SHA256.HashData(EmbeddedDll32.Value)));
+    // Hash both payloads so a change to either selects a fresh directory.
+    static readonly Lazy<string> PayloadHash = new(() => Convert.ToHexString(SHA256.HashData(EmbeddedDll.Value.Concat(EmbeddedDll32.Value).ToArray())));
     public static string Sid => WindowsIdentity.GetCurrent().User!.Value;
 
     public static string FramesDirectory(string sid)
@@ -30,16 +36,20 @@ public static class CameraInstallation
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PCam", "Frames", identity.Value);
     }
     public static string FrameFile => Path.Combine(FramesDirectory(Sid), "frames.bin");
-    static byte[] ReadPayload()
+    static byte[] ReadPayload(string name)
     {
-        using var stream = typeof(CameraInstallation).Assembly.GetManifestResourceStream("PCam.Camera.dll")
+        using var stream = typeof(CameraInstallation).Assembly.GetManifestResourceStream(name)
             ?? throw new InvalidOperationException("缺少虚拟摄像头组件");
         using var output = new MemoryStream();
         stream.CopyTo(output);
         return output.ToArray();
     }
-    public static string InstalledPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-        "PCam", "VirtualCamera", Version, PayloadHash.Value[..12], "PCamCamera.dll");
+    // Both DLLs share one installation directory so the 32-bit copy can never
+    // drift from the 64-bit copy it was built alongside.
+    public static string InstallDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        "PCam", "VirtualCamera", Version, PayloadHash.Value[..12]);
+    public static string InstalledPath => Path.Combine(InstallDirectory, "PCamCamera.dll");
+    public static string InstalledPath32 => Path.Combine(InstallDirectory, "PCamCamera32.dll");
 
     public static void RejectReparsePoints(string path)
     {
@@ -69,9 +79,18 @@ public static class CameraInstallation
             if (!string.Equals(directShow?.GetValue(null) as string, InstalledPath, StringComparison.OrdinalIgnoreCase)) return false;
             using var device = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Classes\CLSID\" + VideoInputCategory + @"\Instance\" + DirectShowClsid);
             if (device == null) return false;
-            // Check the actual DLL too; directory name/registration alone do not prove integrity.
-            using var file = File.OpenRead(InstalledPath);
-            return Convert.ToHexString(SHA256.HashData(file)) == PayloadHash.Value;
+            // The 32-bit twin must be registered in the 32-bit registry view as well.
+            using var view32 = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32);
+            using var directShow32 = view32.OpenSubKey(@"SOFTWARE\Classes\CLSID\" + DirectShowClsid + @"\InprocServer32");
+            if (!string.Equals(directShow32?.GetValue(null) as string, InstalledPath32, StringComparison.OrdinalIgnoreCase)) return false;
+            using var device32 = view32.OpenSubKey(@"SOFTWARE\Classes\CLSID\" + VideoInputCategory + @"\Instance\" + DirectShowClsid);
+            if (device32 == null) return false;
+            // Check the actual DLLs too; directory name/registration alone do not prove integrity.
+            using (var file = File.OpenRead(InstalledPath))
+                if (Convert.ToHexString(SHA256.HashData(file)) != Hash64.Value) return false;
+            using (var file = File.OpenRead(InstalledPath32))
+                if (Convert.ToHexString(SHA256.HashData(file)) != Hash32.Value) return false;
+            return true;
         }
         catch { return false; }
     }
@@ -134,16 +153,37 @@ public static class CameraInstallation
         SecureTree(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PCam", "Frames");
         SecureDirectory(frames, DirectoryRules(new(sid)));
         RejectReparsePoints(InstalledPath);
-        if (!File.Exists(InstalledPath))
-        {
-            using var file = new FileStream(InstalledPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            file.Write(EmbeddedDll.Value);
-        }
-        using (var file = File.OpenRead(InstalledPath))
-            if (Convert.ToHexString(SHA256.HashData(file)) != PayloadHash.Value) throw new IOException("摄像头组件校验失败");
+        WritePayload(InstalledPath, EmbeddedDll.Value, Hash64.Value);
+        WritePayload(InstalledPath32, EmbeddedDll32.Value, Hash32.Value);
         nint dll = NativeLibrary.Load(InstalledPath);
         try { Marshal.ThrowExceptionForHR(Marshal.GetDelegateForFunctionPointer<Register>(NativeLibrary.GetExport(dll, "PcRegister"))()); }
         finally { NativeLibrary.Free(dll); }
+        Register32Bit();
+    }
+    static void WritePayload(string path, byte[] payload, string hash)
+    {
+        if (!File.Exists(path))
+        {
+            using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            file.Write(payload);
+        }
+        using var read = File.OpenRead(path);
+        if (Convert.ToHexString(SHA256.HashData(read)) != hash) throw new IOException("摄像头组件校验失败");
+    }
+    static void Register32Bit()
+    {
+        // SysWOW64\regsvr32 is a 32-bit process, so the filter's COM and filter
+        // mapper entries land in the 32-bit registry view where 32-bit
+        // consumers enumerate devices. The 64-bit registration above covers
+        // 64-bit consumers.
+        var regsvr32 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SystemX86), "regsvr32.exe");
+        if (!File.Exists(regsvr32)) throw new IOException("缺少 32 位组件注册工具");
+        var start = new ProcessStartInfo(regsvr32) { UseShellExecute = false, CreateNoWindow = true };
+        start.ArgumentList.Add("/s");
+        start.ArgumentList.Add(InstalledPath32);
+        using var process = Process.Start(start) ?? throw new IOException("32 位摄像头组件注册未启动");
+        process.WaitForExit();
+        if (process.ExitCode != 0) throw new IOException("32 位摄像头组件注册失败");
     }
     public static async Task EnsureInstalled()
     {

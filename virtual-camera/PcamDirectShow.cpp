@@ -1566,8 +1566,11 @@ HRESULT PcamDirectShowRegister(HMODULE module)
     if (FAILED(hr)) return hr;
 
     HKEY root = nullptr;
+    // No WOW64 flag: each registration process writes its own registry view.
+    // The 64-bit DLL registers the 64-bit view and the 32-bit DLL, loaded by
+    // SysWOW64\regsvr32, registers the 32-bit view for 32-bit consumers.
     LSTATUS status = RegCreateKeyExW(HKEY_LOCAL_MACHINE, key, 0, nullptr, 0,
-        KEY_SET_VALUE | KEY_WOW64_64KEY, nullptr, &root, nullptr);
+        KEY_SET_VALUE, nullptr, &root, nullptr);
     if (status != ERROR_SUCCESS) return HRESULT_FROM_WIN32(status);
     status = RegSetValueExW(root, L"FriendlyName", 0, REG_SZ,
         reinterpret_cast<const BYTE*>(L"PCam"), static_cast<DWORD>(sizeof(L"PCam")));
@@ -1580,7 +1583,7 @@ HRESULT PcamDirectShowRegister(HMODULE module)
 
     root = nullptr;
     status = RegCreateKeyExW(HKEY_LOCAL_MACHINE, key, 0, nullptr, 0,
-        KEY_SET_VALUE | KEY_WOW64_64KEY, nullptr, &root, nullptr);
+        KEY_SET_VALUE, nullptr, &root, nullptr);
     if (status != ERROR_SUCCESS) return HRESULT_FROM_WIN32(status);
     status = RegSetValueExW(root, nullptr, 0, REG_SZ,
         reinterpret_cast<const BYTE*>(path), static_cast<DWORD>((wcslen(path) + 1) * sizeof(wchar_t)));
@@ -1595,15 +1598,29 @@ HRESULT PcamDirectShowRegister(HMODULE module)
         __uuidof(IFilterMapper2), reinterpret_cast<void**>(mapper.put()));
     if (FAILED(hr)) return hr;
 
-    REGFILTERPINS pinInfo{};
-    pinInfo.strName = const_cast<LPWSTR>(L"Output");
-    pinInfo.bOutput = TRUE;
+    // Register as a capture pin with its category and media types. Enumerators
+    // that query the filter mapper (rather than only the device category) need
+    // this to recognise the pin.
+    REGPINTYPES pinTypes[2]{};
+    pinTypes[0].clsMajorType = &MEDIATYPE_Video;
+    pinTypes[0].clsMinorType = &MEDIASUBTYPE_YUY2;
+    pinTypes[1].clsMajorType = &MEDIATYPE_Video;
+    pinTypes[1].clsMinorType = &MEDIASUBTYPE_RGB32;
+
+    REGFILTERPINS2 pinInfo{};
+    pinInfo.dwFlags = REG_PINFLAG_B_OUTPUT;
+    pinInfo.cInstances = 1;
+    pinInfo.nMediaTypes = ARRAYSIZE(pinTypes);
+    pinInfo.lpMediaType = pinTypes;
+    pinInfo.nMediums = 0;
+    pinInfo.lpMedium = nullptr;
+    pinInfo.clsPinCategory = &PIN_CATEGORY_CAPTURE;
 
     REGFILTER2 filterInfo{};
-    filterInfo.dwVersion = 1;
+    filterInfo.dwVersion = 2;
     filterInfo.dwMerit = MERIT_DO_NOT_USE;
-    filterInfo.cPins = 1;
-    filterInfo.rgPins = &pinInfo;
+    filterInfo.cPins2 = 1;
+    filterInfo.rgPins2 = &pinInfo;
 
     return mapper->RegisterFilter(PCAM_DSHOW_CLSID, L"PCam", nullptr,
         &CLSID_VideoInputDeviceCategory, nullptr, &filterInfo);
@@ -1631,4 +1648,19 @@ HRESULT PcamDirectShowUnregister()
     }
 
     return first;
+}
+
+HRESULT PcamDirectShowRegisterSelf() noexcept
+{
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(&PcamDirectShowRegisterSelf), &module))
+        return HRESULT_FROM_WIN32(GetLastError());
+    return PcamDirectShowRegister(module);
+}
+
+HRESULT PcamDirectShowUnregisterSelf() noexcept
+{
+    return PcamDirectShowUnregister();
 }

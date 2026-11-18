@@ -1,6 +1,19 @@
 $ErrorActionPreference='Stop'
+# Cross-compiling to x86 needs the sibling Hostx64/x86 cl.exe and the same
+# INCLUDE/LIB variables with the x64 library directories swapped for x86.
+function Resolve-X86Toolchain([string]$cl){
+    $hostBin=Split-Path $cl            # ...\bin\Hostx64\x64
+    $hostDir=Split-Path $hostBin       # ...\bin\Hostx64
+    $compiler=Join-Path $hostDir 'x86/cl.exe'
+    if(!(Test-Path -LiteralPath $compiler)){$compiler=Join-Path (Split-Path $hostDir) 'Hostx86/x86/cl.exe'}
+    $libraries=(($env:LIB -split ';') | Where-Object {$_} | ForEach-Object {$_ -replace '\\x64$','\x86'}) -join ';'
+    return @{compiler=$compiler; libraries=$libraries}
+}
 if($env:PCAM_HOSTED_NATIVE_READY -eq '1'){
     $nativeCompiler=(Get-Command cl.exe -ErrorAction Stop).Source
+    $x86=Resolve-X86Toolchain $nativeCompiler
+    $nativeCompilerX86=$x86.compiler
+    $nativeLibX86=$x86.libraries
     return
 }
 $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
@@ -33,4 +46,7 @@ if(!(Test-Path -LiteralPath "$wilInclude/wil/result.h")){
 }
 $env:INCLUDE="$wilInclude;$sdkInclude/cppwinrt;$env:INCLUDE"
 $nativeCompiler=(Get-Command cl.exe -ErrorAction Stop).Source
+$x86=Resolve-X86Toolchain $nativeCompiler
+$nativeCompilerX86=$x86.compiler
+$nativeLibX86=$x86.libraries
 $env:PCAM_HOSTED_NATIVE_READY='1'

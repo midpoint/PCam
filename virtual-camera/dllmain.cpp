@@ -22,11 +22,13 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
+        g_hInst = hModule;
+        break;
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
         break;
     case DLL_PROCESS_DETACH:
-        g_hInst = hModule;
+        break;
     }
     return TRUE;
 }
@@ -86,6 +88,18 @@ HRESULT __stdcall DllGetClassObject(GUID const& clsid, GUID const& iid, void** r
     {
         return winrt::to_hresult();
     }
+}
+
+// regsvr32 entry points. SysWOW64\regsvr32 walks the 32-bit view when it loads
+// PCamCamera32.dll, so the same source registers either bitness correctly.
+extern "C" HRESULT __stdcall DllRegisterServer()
+{
+    return PcamDirectShowRegisterSelf();
+}
+
+extern "C" HRESULT __stdcall DllUnregisterServer()
+{
+    return PcamDirectShowUnregisterSelf();
 }
 
 

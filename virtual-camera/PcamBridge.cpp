@@ -2,6 +2,7 @@
 // Uses WIL / C++/WinRT SDK headers; imported sample files are listed separately in ../SOURCES.md.
 #include "pch.h"
 #include <memory>
+#include <cstring>
 #include "PcamDirectShow.h"
 #pragma comment(lib,"advapi32")
 
@@ -105,5 +106,24 @@ extern "C" HRESULT __stdcall PcUnregister(){
     std::wstring key=L"SOFTWARE\\Classes\\CLSID\\";key+=PCAM_CLSID;
     auto code=RegDeleteTreeW(HKEY_LOCAL_MACHINE,key.c_str());HRESULT hr=code==ERROR_FILE_NOT_FOUND?S_OK:HRESULT_FROM_WIN32(code);
     HRESULT directShow=PcamDirectShowUnregister();
+    // Remove the 32-bit filter registration too. Only a 32-bit process can
+    // write the 32-bit view reliably, so run SysWOW64\regsvr32 /u on the twin
+    // DLL installed next to this one.
+    wchar_t wow64[MAX_PATH]{};wchar_t dll[32768]{};HMODULE module=nullptr;
+    if(GetSystemWow64DirectoryW(wow64,ARRAYSIZE(wow64)) &&
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(&PcUnregister),&module) &&
+        GetModuleFileNameW(module,dll,ARRAYSIZE(dll))){
+        wchar_t* name=wcsrchr(dll,L'\\');
+        if(name){
+            wcscpy_s(name+1,ARRAYSIZE(dll)-(name+1-dll),L"PCamCamera32.dll");
+            std::wstring command=std::wstring(L"\"")+wow64+L"\\regsvr32.exe\" /s /u \""+dll+L"\"";
+            STARTUPINFOW si{sizeof(si)};PROCESS_INFORMATION pi{};
+            if(CreateProcessW(nullptr,command.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&si,&pi)){
+                WaitForSingleObject(pi.hProcess,30000);
+                CloseHandle(pi.hThread);CloseHandle(pi.hProcess);
+            }
+        }
+    }
     return FAILED(hr)?hr:directShow;
 }

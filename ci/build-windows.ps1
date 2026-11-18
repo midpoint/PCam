@@ -14,14 +14,17 @@ if(ShouldRun 'recorder'){
 if(ShouldRun 'camera'){
     & "$root/virtual-camera/build-native.ps1" -HostedTools
     CheckExit
-    # Contract check: the filter's media types must describe whole frames.
-    # Kept non-blocking while the probe itself is being validated in CI; its
-    # last output lines surface as a warning annotation when it fails.
-    $probe=& "$root/virtual-camera/build/CameraProbe.exe" --dshow "$root/virtual-camera/build/PCamCamera.dll" 2>&1
-    if($LASTEXITCODE -ne 0){
-        $tail=(@($probe) | Select-Object -Last 6) -join ' | '
-        if($env:GITHUB_ACTIONS -eq 'true'){Write-Host ('::warning::CameraProbe --dshow 退出码 ' + $LASTEXITCODE + '：' + $tail)}
-        else{Write-Warning "CameraProbe --dshow 退出码 $LASTEXITCODE：$tail"}
+    # Contract check for both registry views: the filter's media types must
+    # describe whole frames, and the 32-bit twin must serve 32-bit consumers.
+    # Kept non-blocking while the probes themselves are being validated in CI;
+    # their last output lines surface as warning annotations when they fail.
+    foreach($probeTarget in @(@('CameraProbe.exe','PCamCamera.dll'),@('CameraProbe32.exe','PCamCamera32.dll'))){
+        $probe=& "$root/virtual-camera/build/$($probeTarget[0])" --dshow "$root/virtual-camera/build/$($probeTarget[1])" 2>&1
+        if($LASTEXITCODE -ne 0){
+            $tail=(@($probe) | Select-Object -Last 6) -join ' | '
+            if($env:GITHUB_ACTIONS -eq 'true'){Write-Host ('::warning::' + $probeTarget[0] + ' 退出码 ' + $LASTEXITCODE + '：' + $tail)}
+            else{Write-Warning "$($probeTarget[0]) 退出码 $LASTEXITCODE：$tail"}
+        }
     }
     # A crashed probe must not leak its exit code into the step result. Native
     # commands update $LASTEXITCODE in the caller's scope, so the reset must be

@@ -6,6 +6,8 @@
 EXPORTS
 DllCanUnloadNow = WINRT_CanUnloadNow  PRIVATE
 DllGetClassObject                     PRIVATE
+DllRegisterServer
+DllUnregisterServer
 PcStart
 PcWrite
 PcStop

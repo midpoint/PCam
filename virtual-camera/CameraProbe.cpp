@@ -77,7 +77,10 @@ int DirectShowContracts(const wchar_t* path){
         if(type->pbFormat)CoTaskMemFree(type->pbFormat);CoTaskMemFree(type);
     }
     std::wcout<<L"dshow: teardown"<<std::endl;
-    pin.Reset();pins.Reset();filter.Reset();factory.Reset();FreeLibrary(dll);
+    // Every interface obtained from the DLL must be released before the DLL is
+    // unloaded; `config` is declared after `pin` and would otherwise be
+    // destroyed (calling through its vtable) after FreeLibrary.
+    config.Reset();pin.Reset();pins.Reset();filter.Reset();factory.Reset();FreeLibrary(dll);
     std::wcout<<L"PASS: DirectShow filter factory, output pin and two 1280x720 media types"<<std::endl;
     return 0;
 }
