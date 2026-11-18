@@ -65,10 +65,19 @@ Android从0.12.6起使用专用发布签名。已安装旧调试签名版本的�
 - 连接会校验随机配对码，音频令牌绑定视频会话；刷新二维码会撤销旧连接。音画与令牌通过明文 TCP 传输，同网监听者可能截获画面、声音及令牌并冒充设备。二维码不验证电脑身份，请只在可信网络扫描自己的电脑。
 - 本机 HTTP 视频输出仅监听 `127.0.0.1`，没有独立认证，本机其他程序可能读取画面；请勿代理或映射到公网。
 - 当前提供虚拟摄像头，没有系统虚拟麦克风。会议或直播软件的音频输入需要另行配置。
-- Windows 10 的虚拟摄像头通过 DirectShow 提供，只对以 DirectShow 枚举设备的软件可见；仅使用 Media Foundation 枚举摄像头的软件（部分浏览器、系统相机等）在 Windows 10 上看不到 PCam。要让所有 Windows 10 软件都看到虚拟摄像头需要签名的内核驱动，本项目不安装内核驱动。
-- Windows 10 的 DirectShow 滤镜同时提供 32 位和 64 位版本，OBS、ManyCam 等新老软件都能枚举该虚拟摄像头；仅使用 Media Foundation 枚举摄像头的软件在 Windows 10 上仍看不到 PCam。
+- Windows 10 的虚拟摄像头通过 DirectShow 提供，只对以 DirectShow 枚举设备的软件可见；仅使用 Media Foundation 枚举摄像头的软件（部分浏览器、系统相机等）在 Windows 10 上看不到 PCam。DirectShow 滤镜同时提供 32 位和 64 位版本，OBS、ManyCam 等新老软件都能枚举该虚拟摄像头。要让所有 Windows 10 软件都看到虚拟摄像头需要签名的内核驱动，本项目不安装内核驱动。
 - 录像约每秒请求刷新临时文件、每分钟整合正式文件。该机制不能保证断电零丢失，也不能替代备份；录制期间磁盘占用可能接近两份。
 - 后台与息屏传输受Android和厂商策略限制，摄像头也可能被其他应用抢占。
+
+## 与上游项目的差异
+
+本项目 fork 自 [hyyh0144/PCam](https://github.com/hyyh0144/PCam)，在上游基础上做了以下改进。
+
+- **Windows 10 虚拟摄像头**：上游需要 Windows 11 的系统虚拟摄像头（`MFCreateVirtualCamera`）。本分支新增 DirectShow 视频输入滤镜（`virtual-camera/PcamDirectShow.cpp`），在 Windows 10 1803 及以上注册为摄像头 `PCam`，输出 1280×720 / 30 fps 的 YUY2 或 RGB32 画面，读取与 Windows 11 路径相同的按用户隔离共享帧文件。`MFCreateVirtualCamera` 改为运行时解析，同一组件同时兼容 Windows 10 和 Windows 11。
+- **32 位与 64 位滤镜**：同时构建 `PCamCamera.dll`（64 位）和 `PCamCamera32.dll`（32 位），安装时分别注册到对应的注册表视图，OBS、ManyCam 等 64 位或 32 位软件都能枚举到 `PCam`。
+- **安装与卸载**：安装器嵌入两份组件、分别校验 SHA256，并确认两个注册表视图均已正确注册后才视为安装完成；卸载时一并清理 32 位注册。
+- **构建与测试**：Windows 原生构建拆分为 recorder、camera、tests、publish 四个步骤；CI 同时构建 64/32 位组件，并用 `CameraProbe` 校验滤镜的媒体类型必须是整帧尺寸（两个位宽各一次），失败时以工作流标注提示。
+- **文档**：补充 Windows 10 相关的构建说明、测试方法和代码来源记录（`BUILD-NOTES.md`、`TESTING.md`、`SOURCES.md`、`CHANGELOG.md`）。
 
 ## 源码
 
