@@ -216,7 +216,10 @@ namespace
         type.formattype = FORMAT_VideoInfo;
 
         const DWORD bpp = BytesPerPixel(subtype);
-        type.lSampleSize = PCAM_WIDTH * PCAM_HEIGHT * bpp / 8;
+        // BytesPerPixel already returns bytes per pixel, so this is the full
+        // frame size. Dividing by 8 here once produced a sample one eighth of
+        // a frame, and FillSample rejected every buffer as too small.
+        type.lSampleSize = PCAM_WIDTH * PCAM_HEIGHT * bpp;
 
         auto* vih = static_cast<VIDEOINFOHEADER*>(CoTaskMemAlloc(sizeof(VIDEOINFOHEADER)));
         if (!vih) return E_OUTOFMEMORY;

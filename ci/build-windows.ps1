@@ -13,6 +13,9 @@ if(ShouldRun 'recorder'){
 }
 if(ShouldRun 'camera'){
     & "$root/virtual-camera/build-native.ps1" -HostedTools
+    CheckExit
+    & "$root/virtual-camera/build/CameraProbe.exe" --dshow "$root/virtual-camera/build/PCamCamera.dll"
+    if($LASTEXITCODE -ne 0){throw "DirectShow 滤镜契约验证失败：退出码 $LASTEXITCODE"}
 }
 if(ShouldRun 'tests'){
     & dotnet restore "$root/tests/ProtocolTests.csproj" --configfile $nuget

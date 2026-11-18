@@ -64,7 +64,15 @@ int DirectShowContracts(const wchar_t* path){
         Check(config->GetStreamCaps(i,&type,data));
         if(!type||!type->pbFormat||type->cbFormat<sizeof(VIDEOINFOHEADER))throw E_FAIL;
         auto* info=(VIDEOINFOHEADER*)type->pbFormat;
-        if(info->bmiHeader.biWidth!=1280||info->bmiHeader.biHeight!=720||type->lSampleSize==0)throw E_FAIL;
+        const BITMAPINFOHEADER& bmih=info->bmiHeader;
+        const DWORD frameBytes=(DWORD)bmih.biWidth*bmih.biHeight*bmih.biBitCount/8;
+        if(bmih.biWidth!=1280||labs(bmih.biHeight)!=720)throw E_FAIL;
+        // The allocator is sized from lSampleSize; if it understates a frame,
+        // FillSample rejects every buffer (VFW_E_BUFFER_OVERFLOW) and the
+        // consumer shows black.
+        if(type->lSampleSize!=frameBytes||bmih.biSizeImage!=frameBytes){
+            std::wcerr<<L"GetStreamCaps "<<i<<L": lSampleSize "<<type->lSampleSize<<L", biSizeImage "<<bmih.biSizeImage<<L", frame "<<frameBytes<<std::endl;throw E_FAIL;
+        }
         if(type->pbFormat)CoTaskMemFree(type->pbFormat);CoTaskMemFree(type);
     }
     pin.Reset();pins.Reset();filter.Reset();factory.Reset();FreeLibrary(dll);
