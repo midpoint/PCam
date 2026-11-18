@@ -5,11 +5,10 @@ param(
 )
 $ErrorActionPreference='Stop'
 $PSNativeCommandUseErrorActionPreference=$false
-$root=Split-Path $PSScriptRoot
 $log=Join-Path ([IO.Path]::GetTempPath()) "pcam-build-$Stage.log"
 $failure=$null
 try{
-    & "$root/build-windows.ps1" -Stage $Stage *>&1 | Tee-Object -FilePath $log
+    & "$PSScriptRoot/build-windows.ps1" -Stage $Stage *>&1 | Tee-Object -FilePath $log
 }catch{
     $failure=$_
 }
