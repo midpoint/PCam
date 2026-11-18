@@ -48,18 +48,19 @@ int Contracts(const wchar_t* path){
 }
 
 int DirectShowContracts(const wchar_t* path){
-    HMODULE dll=LoadLibraryW(path);if(!dll)Check(HRESULT_FROM_WIN32(GetLastError()));
+    HMODULE dll=LoadLibraryW(path);std::wcout<<L"dshow: load"<<std::endl;if(!dll)Check(HRESULT_FROM_WIN32(GetLastError()));
     using Factory=HRESULT(__stdcall*)(REFCLSID,REFIID,void**);
     auto getFactory=(Factory)GetProcAddress(dll,"DllGetClassObject");if(!getFactory)throw E_FAIL;
-    ComPtr<IClassFactory> factory;Check(getFactory(PCAM_DSHOW_CLSID,__uuidof(IClassFactory),(void**)factory.GetAddressOf()));
-    ComPtr<IBaseFilter> filter;Check(factory->CreateInstance(nullptr,__uuidof(IBaseFilter),(void**)filter.GetAddressOf()));
-    ComPtr<IEnumPins> pins;Check(filter->EnumPins(&pins));
+    ComPtr<IClassFactory> factory;std::wcout<<L"dshow: factory"<<std::endl;Check(getFactory(PCAM_DSHOW_CLSID,__uuidof(IClassFactory),(void**)factory.GetAddressOf()));
+    ComPtr<IBaseFilter> filter;std::wcout<<L"dshow: filter"<<std::endl;Check(factory->CreateInstance(nullptr,__uuidof(IBaseFilter),(void**)filter.GetAddressOf()));
+    ComPtr<IEnumPins> pins;std::wcout<<L"dshow: pins"<<std::endl;Check(filter->EnumPins(&pins));
     ComPtr<IPin> pin;ULONG count=0;Check(pins->Next(1,pin.GetAddressOf(),&count));if(count!=1)throw E_FAIL;
-    PIN_DIRECTION direction;Check(pin->QueryDirection(&direction));if(direction!=PINDIR_OUTPUT)throw E_FAIL;
-    ComPtr<IAMStreamConfig> config;Check(pin->QueryInterface(__uuidof(IAMStreamConfig),(void**)config.GetAddressOf()));
+    PIN_DIRECTION direction;std::wcout<<L"dshow: direction"<<std::endl;Check(pin->QueryDirection(&direction));if(direction!=PINDIR_OUTPUT)throw E_FAIL;
+    ComPtr<IAMStreamConfig> config;std::wcout<<L"dshow: stream config"<<std::endl;Check(pin->QueryInterface(__uuidof(IAMStreamConfig),(void**)config.GetAddressOf()));
     int caps=0,size=0;Check(config->GetNumberOfCapabilities(&caps,&size));
     if(caps!=2||size!=(int)sizeof(VIDEO_STREAM_CONFIG_CAPS))throw E_FAIL;
     for(int i=0;i<caps;i++){
+        std::wcout<<L"dshow: caps "<<i<<std::endl;
         AM_MEDIA_TYPE* type=nullptr;BYTE data[sizeof(VIDEO_STREAM_CONFIG_CAPS)]{};
         Check(config->GetStreamCaps(i,&type,data));
         if(!type||!type->pbFormat||type->cbFormat<sizeof(VIDEOINFOHEADER))throw E_FAIL;
@@ -75,6 +76,7 @@ int DirectShowContracts(const wchar_t* path){
         }
         if(type->pbFormat)CoTaskMemFree(type->pbFormat);CoTaskMemFree(type);
     }
+    std::wcout<<L"dshow: teardown"<<std::endl;
     pin.Reset();pins.Reset();filter.Reset();factory.Reset();FreeLibrary(dll);
     std::wcout<<L"PASS: DirectShow filter factory, output pin and two 1280x720 media types"<<std::endl;
     return 0;
