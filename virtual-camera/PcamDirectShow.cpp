@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdarg>
 #include <cstring>
 #include <mutex>
 #include <new>
@@ -39,6 +40,70 @@ namespace
     // Live objects created from this DLL. DllCanUnloadNow must refuse to unload
     // while a DirectShow filter or class factory still exists.
     std::atomic<LONG> g_objectCount{ 0 };
+
+    // Best-effort diagnostics. The filter runs inside the consuming
+    // application (OBS, for example), where PCam's own log cannot see it.
+    // Lines go to %TEMP%\PCam-DirectShow.log, capped at 512 KB, and repeated
+    // failures are throttled so a black stream does not flood the file.
+    void TraceLine(const wchar_t* text) noexcept
+    {
+        wchar_t path[MAX_PATH]{};
+        const DWORD length = GetTempPathW(ARRAYSIZE(path), path);
+        if (!length || length >= ARRAYSIZE(path) - 32) return;
+        if (FAILED(StringCchCatW(path, ARRAYSIZE(path), L"PCam-DirectShow.log"))) return;
+
+        HANDLE file = CreateFileW(path, FILE_APPEND_DATA,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return;
+        LARGE_INTEGER size{};
+        if (GetFileSizeEx(file, &size) && size.QuadPart > 512 * 1024)
+        {
+            LARGE_INTEGER begin{};
+            SetFilePointerEx(file, begin, nullptr, FILE_BEGIN);
+            SetEndOfFile(file);
+        }
+        wchar_t line[700]{};
+        if (SUCCEEDED(StringCchPrintfW(line, ARRAYSIZE(line), L"[%llu] %s\r\n",
+            GetTickCount64(), text)))
+        {
+            DWORD written = 0;
+            WriteFile(file, line, static_cast<DWORD>(wcslen(line) * sizeof(wchar_t)),
+                &written, nullptr);
+        }
+        CloseHandle(file);
+    }
+
+    void Trace(const wchar_t* format, ...) noexcept
+    {
+        wchar_t text[600]{};
+        va_list args;
+        va_start(args, format);
+        const HRESULT hr = StringCchVPrintfW(text, ARRAYSIZE(text), format, args);
+        va_end(args);
+        if (SUCCEEDED(hr)) TraceLine(text);
+    }
+
+    // Throttled variant used from the streaming thread.
+    void TraceState(ULONGLONG& next, ULONGLONG interval, const wchar_t* format, ...) noexcept
+    {
+        const ULONGLONG now = GetTickCount64();
+        if (now < next) return;
+        next = now + interval;
+        wchar_t text[600]{};
+        va_list args;
+        va_start(args, format);
+        const HRESULT hr = StringCchVPrintfW(text, ARRAYSIZE(text), format, args);
+        va_end(args);
+        if (SUCCEEDED(hr)) TraceLine(text);
+    }
+
+    const wchar_t* SubtypeName(REFGUID subtype) noexcept
+    {
+        if (IsEqualGUID(subtype, MEDIASUBTYPE_YUY2)) return L"YUY2";
+        if (IsEqualGUID(subtype, MEDIASUBTYPE_RGB32)) return L"RGB32";
+        return L"unsupported";
+    }
 
     // Minimal owning COM pointer. Interfaces are released with Release().
     template <class T>
@@ -258,6 +323,10 @@ namespace
                     GetTickCount64() - tick > 2000)
                 {
                     m_valid = false;
+                    TraceState(m_nextFailureTrace, 2000,
+                        L"no recent frame: magic=0x%08lX, slot=%ld, age=%llu ms",
+                        static_cast<unsigned long>(m_view->magic), slot,
+                        GetTickCount64() - tick);
                     return nullptr; // publisher stopped: output black like the MF source
                 }
 
@@ -272,6 +341,8 @@ namespace
                 if (sequence == m_view->sequence)
                 {
                     m_valid = true;
+                    TraceState(m_nextOkTrace, 30000,
+                        L"frame ok: slot=%ld, sequence=%ld", slot, sequence);
                     return m_frame.data();
                 }
             }
@@ -298,30 +369,57 @@ namespace
             wchar_t path[32768]{};
             DWORD size = sizeof(path);
             if (RegGetValueW(HKEY_CURRENT_USER, kFramePathKey, kFramePathValue,
-                RRF_RT_REG_SZ, nullptr, path, &size) != ERROR_SUCCESS) return;
+                RRF_RT_REG_SZ, nullptr, path, &size) != ERROR_SUCCESS)
+            {
+                TraceState(m_nextFailureTrace, 2000,
+                    L"frame file: HKCU\\%s\\%s is missing (is PCam running and publishing?)",
+                    kFramePathKey, kFramePathValue);
+                return;
+            }
 
             m_file = CreateFileW(path, GENERIC_READ,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-            if (m_file == INVALID_HANDLE_VALUE) return;
+            if (m_file == INVALID_HANDLE_VALUE)
+            {
+                TraceState(m_nextFailureTrace, 2000, L"frame file open failed (%lu): %s",
+                    static_cast<unsigned long>(GetLastError()), path);
+                return;
+            }
 
             LARGE_INTEGER length{};
             if (!GetFileSizeEx(m_file, &length) || length.QuadPart < static_cast<LONGLONG>(sizeof(PcamFrames)))
             {
+                TraceState(m_nextFailureTrace, 2000, L"frame file too small: %s", path);
                 Close();
                 return;
             }
 
             m_mapping = CreateFileMappingW(m_file, nullptr, PAGE_READONLY, 0, 0, nullptr);
-            if (!m_mapping) { Close(); return; }
+            if (!m_mapping)
+            {
+                TraceState(m_nextFailureTrace, 2000, L"frame file mapping failed (%lu): %s",
+                    static_cast<unsigned long>(GetLastError()), path);
+                Close();
+                return;
+            }
             m_view = static_cast<const PcamFrames*>(MapViewOfFile(m_mapping, FILE_MAP_READ, 0, 0, sizeof(PcamFrames)));
-            if (!m_view) Close();
+            if (!m_view)
+            {
+                TraceState(m_nextFailureTrace, 2000, L"frame file view failed (%lu): %s",
+                    static_cast<unsigned long>(GetLastError()), path);
+                Close();
+                return;
+            }
+            Trace(L"frame file mapped: %s", path);
         }
 
         HANDLE m_file = INVALID_HANDLE_VALUE;
         HANDLE m_mapping = nullptr;
         const PcamFrames* m_view = nullptr;
         ULONGLONG m_lastAttempt = 0;
+        ULONGLONG m_nextFailureTrace = 0;
+        ULONGLONG m_nextOkTrace = 0;
         std::vector<BYTE> m_frame;
         bool m_valid = false;
     };
@@ -675,6 +773,9 @@ namespace
         }
         if (!IsSupportedType(type))
         {
+            Trace(L"connect rejected: majortype=%08lX, subtype=%08lX",
+                static_cast<unsigned long>(type.majortype.Data1),
+                static_cast<unsigned long>(type.subtype.Data1));
             FreeMediaType(type);
             return VFW_E_TYPE_NOT_ACCEPTED;
         }
@@ -690,6 +791,8 @@ namespace
         HRESULT hr = receivePin->ReceiveConnection(static_cast<IPin*>(this), &type);
         if (FAILED(hr))
         {
+            Trace(L"connect: ReceiveConnection(%s) failed 0x%08lX",
+                SubtypeName(type.subtype), static_cast<unsigned long>(hr));
             FreeMediaType(type);
             return hr;
         }
@@ -698,6 +801,7 @@ namespace
         hr = receivePin->QueryInterface(__uuidof(IMemInputPin), reinterpret_cast<void**>(input.put()));
         if (FAILED(hr))
         {
+            Trace(L"connect: IMemInputPin unavailable 0x%08lX", static_cast<unsigned long>(hr));
             receivePin->Disconnect();
             FreeMediaType(type);
             return hr;
@@ -707,6 +811,7 @@ namespace
         hr = DecideAllocator(input.get(), allocator.put(), type.lSampleSize);
         if (FAILED(hr))
         {
+            Trace(L"connect: allocator failed 0x%08lX", static_cast<unsigned long>(hr));
             receivePin->Disconnect();
             FreeMediaType(type);
             return hr;
@@ -736,6 +841,7 @@ namespace
             FreeMediaType(type);
             return VFW_E_ALREADY_CONNECTED;
         }
+        Trace(L"connect: %s, sample=%lu bytes", SubtypeName(type.subtype), type.lSampleSize);
         return S_OK;
     }
 
@@ -758,6 +864,7 @@ namespace
         }
         if (allocator) allocator->Release();
         if (input) input->Release();
+        Trace(L"disconnect");
         return S_OK;
     }
 
@@ -861,7 +968,12 @@ namespace
     STDMETHODIMP PcamOutputPin::SetFormat(AM_MEDIA_TYPE* mediaType)
     {
         if (!mediaType) return E_POINTER;
-        if (!IsSupportedType(*mediaType)) return VFW_E_INVALIDMEDIATYPE;
+        if (!IsSupportedType(*mediaType))
+        {
+            Trace(L"SetFormat rejected: subtype=%08lX",
+                static_cast<unsigned long>(mediaType->subtype.Data1));
+            return VFW_E_INVALIDMEDIATYPE;
+        }
 
         const GUID subtype = mediaType->subtype;
         std::lock_guard<std::mutex> lock(m_lock);
@@ -874,6 +986,7 @@ namespace
         FreeMediaType(m_mediaType);
         m_mediaType = copy;
         m_mediaTypeValid = true;
+        Trace(L"SetFormat: %s, sample=%lu", SubtypeName(subtype), copy.lSampleSize);
         return S_OK;
     }
 
@@ -974,6 +1087,7 @@ namespace
             }
         }
         if (finished.joinable()) finished.join();
+        Trace(L"StartStreaming: capture thread started");
         return S_OK;
     }
 
@@ -987,6 +1101,7 @@ namespace
         m_runCv.notify_all();
         if (m_thread.joinable() && m_thread.get_id() != std::this_thread::get_id())
             m_thread.join();
+        Trace(L"StopStreaming: capture thread joined");
     }
 
     HRESULT PcamOutputPin::FillSample(IMediaSample* sample) noexcept
@@ -1026,10 +1141,13 @@ namespace
         }
         else if (IsEqualGUID(subtype, MEDIASUBTYPE_YUY2))
         {
+            // YUY2 declares a positive biHeight, so rows go bottom-up just like
+            // the RGB32 path.
             for (DWORD y = 0; y < PCAM_HEIGHT; ++y)
             {
                 const BYTE* source = frame + static_cast<size_t>(y) * PCAM_STRIDE;
-                BYTE* target = destination + static_cast<size_t>(y) * PCAM_WIDTH * 2;
+                BYTE* target = destination +
+                    static_cast<size_t>(PCAM_HEIGHT - 1 - y) * PCAM_WIDTH * 2;
                 for (DWORD x = 0; x < PCAM_WIDTH; x += 2)
                 {
                     const int b0 = source[0], g0 = source[1], r0 = source[2];
@@ -1092,6 +1210,8 @@ namespace
         using Clock = std::chrono::steady_clock;
         LONGLONG base = 0;
         bool baseSet = false;
+        ULONGLONG nextTrace = 0;
+        bool traceDelivered = false;
         auto next = Clock::now();
         m_streaming = true;
 
@@ -1133,6 +1253,9 @@ namespace
                 }
                 if (!copied || !input || !allocator)
                 {
+                    TraceState(nextTrace, 1000,
+                        L"stream: negotiated state unusable (mediaType=%d, input=%d, allocator=%d)",
+                        copied ? 1 : 0, input ? 1 : 0, allocator ? 1 : 0);
                     // Do not spin if the negotiated state is momentarily unusable.
                     std::unique_lock<std::mutex> lock(m_runLock);
                     m_runCv.wait_for(lock, std::chrono::milliseconds(1),
@@ -1142,14 +1265,25 @@ namespace
 
                 Ptr<IMediaSample> sample;
                 HRESULT hr = allocator->GetBuffer(sample.put(), nullptr, nullptr, 200);
-                if (SUCCEEDED(hr) && sample)
+                if (FAILED(hr))
+                {
+                    TraceState(nextTrace, 1000, L"stream: GetBuffer failed 0x%08lX",
+                        static_cast<unsigned long>(hr));
+                }
+                else if (sample)
                 {
                     const LONGLONG now = Now();
                     if (!baseSet) { base = now; baseSet = true; }
                     REFERENCE_TIME start = now - base;
                     REFERENCE_TIME stop = start + kFrameInterval;
 
-                    if (SUCCEEDED(FillSample(sample.get())))
+                    HRESULT filled = FillSample(sample.get());
+                    if (FAILED(filled))
+                    {
+                        TraceState(nextTrace, 1000, L"stream: FillSample failed 0x%08lX",
+                            static_cast<unsigned long>(filled));
+                    }
+                    else
                     {
                         sample->SetTime(&start, &stop);
                         sample->SetSyncPoint(TRUE);
@@ -1157,6 +1291,16 @@ namespace
                         sample->SetPreroll(FALSE);
                         sample->SetMediaType(&mediaType.value);
                         hr = input->Receive(sample.get());
+                        if (FAILED(hr))
+                        {
+                            TraceState(nextTrace, 1000, L"stream: Receive failed 0x%08lX",
+                                static_cast<unsigned long>(hr));
+                        }
+                        else if (!traceDelivered)
+                        {
+                            traceDelivered = true;
+                            Trace(L"stream: first sample delivered (t=%lld)", static_cast<long long>(start));
+                        }
                     }
                 }
 
@@ -1246,6 +1390,7 @@ namespace
 
     STDMETHODIMP PcamFilter::Stop()
     {
+        Trace(L"filter: Stop");
         m_state = State_Stopped;
         if (m_pin) m_pin->StopStreaming();
         return S_OK;
@@ -1253,12 +1398,14 @@ namespace
 
     STDMETHODIMP PcamFilter::Pause()
     {
+        Trace(L"filter: Pause");
         m_state = State_Paused;
         return m_pin ? m_pin->StartStreaming() : E_UNEXPECTED;
     }
 
     STDMETHODIMP PcamFilter::Run(REFERENCE_TIME)
     {
+        Trace(L"filter: Run");
         m_state = State_Running;
         return m_pin ? m_pin->StartStreaming() : E_UNEXPECTED;
     }
