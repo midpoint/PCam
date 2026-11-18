@@ -74,8 +74,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  release-windows:
-    name: Publish Windows release
+  release-fork:
+    name: Publish fork release
     needs: [windows]
     if: github.repository == 'midpoint/PCam' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -91,7 +91,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./ci/publish-windows-release.ps1
+        run: ./ci/publish-fork-release.ps1
 
   release:
     name: Publish GitHub Release

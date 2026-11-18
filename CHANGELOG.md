@@ -1,5 +1,10 @@
 # 更新记录
 
+## Windows0.16.1 / Android0.12.7
+
+- 本仓库 Releases 同时提供 Android 安装包：发布任务从上游项目的已签名发布复制 `PCam-0.12.7.apk` 及其 SHA256 清单，校验摘要后与 Windows 安装包一同发布。
+- Windows 端无功能变化。
+
 ## Windows0.16.0 / Android0.12.7
 
 - 虚拟摄像头支持 Windows 10：新增 DirectShow 视频输入滤镜，与 Media Foundation 媒体源共用按用户隔离的帧文件；`MFCreateVirtualCamera` 改为运行时解析，Windows 11 继续使用系统虚拟摄像头接口。Windows 10 上仅使用 Media Foundation 枚举摄像头的软件仍看不到该设备。

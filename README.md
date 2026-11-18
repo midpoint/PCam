@@ -4,7 +4,7 @@
 
 PCam 将 Android 手机的摄像头画面传到 Windows 电脑，支持多机位合成、虚拟摄像头输出和本地录像。适合桌面教学、作品展示、产品演示和会议补充机位。
 
-当前版本：**Windows 0.16.0 / Android 0.12.7**。
+当前版本：**Windows 0.16.1 / Android 0.12.7**。
 
 ## 实机展示
 
@@ -44,7 +44,7 @@ PCam 将 Android 手机的摄像头画面传到 Windows 电脑，支持多机位
 
 首次安装或更新虚拟摄像头组件需要**管理员权限**，请允许 Windows 的权限请求。网络开启客户端隔离时，设备可能无法互相连接。
 
-在 [Releases 下载最新版本](https://github.com/midpoint/PCam/releases/latest)，直接下载 `PCam-0.16.0.exe`，无需登录 GitHub。每次 main 更新或手动运行构建，Windows 端编译与测试成功后会自动发布安装包及 SHA256 校验文件；Android 安装包请到上游 [hyyh0144/PCam Releases](https://github.com/hyyh0144/PCam/releases) 下载。历史版本保留，同版本已发布文件不会被重编译覆盖。Actions 构建附件仍保留 30 天，Releases 不受这项期限限制。
+在 [Releases 下载最新版本](https://github.com/midpoint/PCam/releases/latest)，直接下载 `PCam-0.16.1.exe` 或 `PCam-0.12.7.apk`，无需登录 GitHub。每次 main 更新或手动运行构建，Windows 端编译与测试成功后会自动发布安装包及 SHA256 校验文件；Android 安装包复制自上游项目的已签名发布。历史版本保留，同版本已发布文件不会被重编译覆盖。Actions 构建附件仍保留 30 天，Releases 不受这项期限限制。
 
 Android从0.12.6起使用专用发布签名。已安装旧调试签名版本的用户，需要先卸载旧版再安装，手机端应用设置会被清除。后续发布将沿用这把发布密钥。
 
@@ -78,7 +78,7 @@ Android从0.12.6起使用专用发布签名。已安装旧调试签名版本的�
 - **安装与卸载**：安装器嵌入两份组件、分别校验 SHA256，并确认两个注册表视图均已正确注册后才视为安装完成；卸载时一并清理 32 位注册。
 - **构建与测试**：Windows 原生构建拆分为 recorder、camera、tests、publish 四个步骤；CI 同时构建 64/32 位组件，并用 `CameraProbe` 校验滤镜的媒体类型必须是整帧尺寸（两个位宽各一次），失败时以工作流标注提示。
 - **文档**：补充 Windows 10 相关的构建说明、测试方法和代码来源记录（`BUILD-NOTES.md`、`TESTING.md`、`SOURCES.md`、`CHANGELOG.md`）。
-- **发布**：本仓库的 Actions 在 Windows 编译与测试成功后，自动把安装包和 SHA256 清单发布到本仓库 [Releases](https://github.com/midpoint/PCam/releases)，任何人无需登录即可下载；Android 安装包仍由上游项目发布。
+- **发布**：本仓库的 Actions 在 Windows 编译与测试成功后，自动把 Windows 安装包、上游已签名的 Android 安装包和两份 SHA256 清单发布到本仓库 [Releases](https://github.com/midpoint/PCam/releases)，任何人无需登录即可下载。
 
 ## 源码
 

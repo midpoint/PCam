@@ -1,6 +1,6 @@
 # 构建
 
-版本：Windows0.16.0、Android0.12.7。Windows程序由C#和两个原生组件组成；Android程序使用Java与ZXing。
+版本：Windows0.16.1、Android0.12.7。Windows程序由C#和两个原生组件组成；Android程序使用Java与ZXing。
 
 ## 工具
 
@@ -57,7 +57,7 @@ Java编译不能仅用桌面`--release 8`加普通classpath中的`android.jar`�
 
 ## GitHub Actions
 
-推送 main 会自动触发，也可以在 Actions 的“Build PCam”页面选择 Run workflow。Windows 任务生成 exe 并上传为 `PCam-Windows` 构建附件，保留 30 天；在本仓库（`midpoint/PCam`）中，该任务成功后由独立的发布任务校验文件摘要，先将 exe 与 SHA256 清单上传到草稿，再发布到 [本仓库 Releases](https://github.com/midpoint/PCam/releases/latest)，标签格式为 `v电脑版本`。上游仓库（`hyyh0144/PCam`）另有 Android 任务与整包发布任务，两端均成功后发布到[上游 Releases](https://github.com/hyyh0144/PCam/releases/latest)，标签格式为 `v电脑版本-android-v手机版本`。
+推送 main 会自动触发，也可以在 Actions 的“Build PCam”页面选择 Run workflow。Windows 任务生成 exe 并上传为 `PCam-Windows` 构建附件，保留 30 天；在本仓库（`midpoint/PCam`）中，该任务成功后由独立的发布任务校验文件摘要，并把上游项目发布的已签名 apk 一并复制过来，先将 exe、apk 与两份 SHA256 清单上传到草稿，再发布到 [本仓库 Releases](https://github.com/midpoint/PCam/releases/latest)，标签格式为 `v电脑版本`。上游仓库（`hyyh0144/PCam`）另有 Android 任务与整包发布任务，两端均成功后发布到[上游 Releases](https://github.com/hyyh0144/PCam/releases/latest)，标签格式为 `v电脑版本-android-v手机版本`。
 
 Android需要维护者在仓库Actions Secrets中配置`PCAM_KEYSTORE_BASE64`、`PCAM_STORE_PASSWORD`与`PCAM_KEY_PASSWORD`。Base64只是传输编码，密钥必须放入Secret，不得写入源码。签名仅在官方仓库main分支构建中使用，不触发PR签名构建；临时密钥文件在任务结束时删除，最终APK按上文公开指纹检查。Secrets缺失时失败，不生成临时签名。独立分支使用自己的密钥时需相应修改仓库限制及公开指纹检查。
 
