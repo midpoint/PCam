@@ -84,7 +84,7 @@ int DirectShowContracts(const wchar_t* path){
 
 int wmain(int argc,wchar_t** argv){try{
     Check(CoInitializeEx(nullptr,COINIT_MULTITHREADED));Check(MFStartup(MF_VERSION));
-    if(argc==3 && wcscmp(argv[1],L"--dshow")==0){int result=DirectShowContracts(argv[2]);MFShutdown();CoUninitialize();return result;}
+    if(argc==3 && wcscmp(argv[1],L"--dshow")==0){int result=DirectShowContracts(argv[2]);std::wcout<<L"dshow: MFShutdown"<<std::endl;MFShutdown();std::wcout<<L"dshow: CoUninitialize"<<std::endl;CoUninitialize();return result;}
     if(argc==3 && wcscmp(argv[1],L"--contracts")==0){int result=Contracts(argv[2]);MFShutdown();CoUninitialize();return result;}
     ComPtr<IMFMediaSource> source;bool direct=argc>=4 && wcscmp(argv[1],L"--direct")==0;
     if(direct){

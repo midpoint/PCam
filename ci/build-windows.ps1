@@ -23,6 +23,8 @@ if(ShouldRun 'camera'){
         if($env:GITHUB_ACTIONS -eq 'true'){Write-Host ('::warning::CameraProbe --dshow 退出码 ' + $LASTEXITCODE + '：' + $tail)}
         else{Write-Warning "CameraProbe --dshow 退出码 $LASTEXITCODE：$tail"}
     }
+    # A crashed probe must not leak its exit code into the step result.
+    $LASTEXITCODE=0
 }
 if(ShouldRun 'tests'){
     & dotnet restore "$root/tests/ProtocolTests.csproj" --configfile $nuget
