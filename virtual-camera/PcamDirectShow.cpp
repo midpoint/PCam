@@ -20,7 +20,9 @@
 
 #include <dshow.h>
 #include <strmif.h>
-#include <uuids.h>
+// dshow.h already includes uuids.h. That header has no include guard, and
+// pch.h defines INITGUID, so a second include would redefine every GUID in
+// this translation unit (C2374).
 
 #include "PcamDirectShow.h"
 
