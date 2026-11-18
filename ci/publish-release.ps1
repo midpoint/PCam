@@ -64,7 +64,7 @@ $notes = @"
 - 自动构建记录：https://github.com/$repo/actions/runs/$env:GITHUB_RUN_ID
 - SHA256SUMS 文件可用于核对下载完整性。
 
-Windows 虚拟摄像头需要 Windows 11，首次安装需管理员权限。Android 需要 8.0 或更高版本；发布签名沿用既有密钥，旧调试签名版本需先卸载再安装。
+Windows 虚拟摄像头在 Windows 11 使用系统接口、在 Windows 10 使用 DirectShow，首次安装需管理员权限。Android 需要 8.0 或更高版本；发布签名沿用既有密钥，旧调试签名版本需先卸载再安装。
 "@
 $notesFile = Join-Path $work 'release-notes.md'
 [IO.File]::WriteAllText($notesFile, $notes, [Text.UTF8Encoding]::new($false))

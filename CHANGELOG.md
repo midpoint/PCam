@@ -1,8 +1,12 @@
 # 更新记录
 
-## 未发布
+## Windows0.16.0 / Android0.12.7
 
 - 虚拟摄像头支持 Windows 10：新增 DirectShow 视频输入滤镜，与 Media Foundation 媒体源共用按用户隔离的帧文件；`MFCreateVirtualCamera` 改为运行时解析，Windows 11 继续使用系统虚拟摄像头接口。Windows 10 上仅使用 Media Foundation 枚举摄像头的软件仍看不到该设备。
+- DirectShow 滤镜同时提供 64 位与 32 位版本，安装时分别注册到对应的注册表视图，OBS、ManyCam 等 64 位或 32 位软件都能枚举；安装器分别校验两份组件的摘要。
+- Windows 原生构建拆分为 recorder、camera、tests、publish 四个步骤；CI 对两个位宽各运行一次媒体类型契约检查，确保采样大小与整帧一致。
+- 本 fork 的 Actions 在 Windows 任务成功后自动把安装包发布到本仓库 Releases；Android 安装包仍由上游项目发布，本次 Android 端无改动。
+- 新增「与上游项目的差异」说明和相关构建、测试文档。
 
 ## Windows0.15.2 / Android0.12.7
 

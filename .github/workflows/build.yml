@@ -74,6 +74,25 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  release-windows:
+    name: Publish Windows release
+    needs: [windows]
+    if: github.repository == 'midpoint/PCam' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify artifact and publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./ci/publish-windows-release.ps1
+
   release:
     name: Publish GitHub Release
     needs: [windows, android]
