@@ -17,7 +17,8 @@ public sealed class VirtualCamera : IDisposable
     public async Task Initialize(){
         if(Interlocked.Exchange(ref initialized,1)!=0 || disposed)return;
         try{
-            if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,22000)){Status?.Invoke("虚拟摄像头需要 Windows 11");return;}
+            if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,17134)){Status?.Invoke("虚拟摄像头需要 Windows 10 1803 或更高版本");return;}
+            if(RuntimeInformation.ProcessArchitecture!=Architecture.X64){Status?.Invoke("虚拟摄像头需要 64 位 Windows");return;}
             await CameraInstallation.EnsureInstalled();
             lock(gate){
                 if(disposed)return;
@@ -35,7 +36,10 @@ public sealed class VirtualCamera : IDisposable
             var write=Marshal.GetDelegateForFunctionPointer<Write>(NativeLibrary.GetExport(dll,"PcWrite"));
             stop=Marshal.GetDelegateForFunctionPointer<Stop>(NativeLibrary.GetExport(dll,"PcStop"));
             Marshal.ThrowExceptionForHR(start(CameraInstallation.FrameFile,CameraInstallation.Sid,out context));
-            Status?.Invoke("虚拟摄像头已就绪 · 在其他软件选择 PCam");
+            // Windows 11 publishes a Media Foundation virtual camera; Windows 10
+            // exposes the same frames through the DirectShow video input filter.
+            bool directShow=!OperatingSystem.IsWindowsVersionAtLeast(10,0,22000);
+            Status?.Invoke(directShow?"虚拟摄像头已就绪 · 在支持 DirectShow 的软件中选择 PCam":"虚拟摄像头已就绪 · 在其他软件选择 PCam");
             // Reuse the rendering target and pixel array; allocate neither at video frame rate.
             var target=new RenderTargetBitmap(1280,720,96,96,PixelFormats.Pbgra32);
             byte[] pixels=new byte[1280*720*4];long previous=-1;

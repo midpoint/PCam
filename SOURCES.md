@@ -38,6 +38,7 @@
 | `android/app/src/main/java/cn/phonecam/` | 相机与服务控制、连接协议、音频发送、NV21旋转及变焦/对焦；扫码调用ZXing |
 | `recorder/` | 调用Windows Media Foundation的H.264/AAC录制与验证；没有自带编解码器源码 |
 | `virtual-camera/PcamBridge.cpp` | PCam发布端、共享帧写入、注册与会话管理 |
+| `virtual-camera/PcamDirectShow.cpp`、`PcamDirectShow.h` | PCam自有代码：Windows 10 DirectShow虚拟摄像头滤镜、COM工厂与设备类别注册；使用Windows SDK的DirectShow接口，未导入第三方滤镜源码 |
 | `virtual-camera/PcamShared.h` | PCam共享帧结构及常量 |
 | `virtual-camera/CameraProbe.cpp` | 枚举和读取系统虚拟摄像头的验证程序 |
 | `tests/` | 项目测试与测试替身；`tests/android-stubs`仅供桌面测试，不是Android平台代码 |

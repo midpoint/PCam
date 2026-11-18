@@ -28,6 +28,17 @@
 
 `tests/ReviewTests/ReviewTests.csproj`还需传入测试MP4路径，覆盖恢复冲突、整合失败重试与畸形片段。`recorder/RecordingProbe.cpp`用于实际解码并检查音轨和画面。
 
+虚拟摄像头组件构建后可用验证程序检查两套接口：
+
+```powershell
+# Media Foundation 激活契约（Windows 11 系统虚拟摄像头路径）
+./virtual-camera/build/CameraProbe.exe --contracts ./virtual-camera/build/PCamCamera.dll
+# DirectShow 滤镜工厂、输出引脚与 1280x720 媒体类型（Windows 10 路径）
+./virtual-camera/build/CameraProbe.exe --dshow ./virtual-camera/build/PCamCamera.dll
+```
+
+Windows 10 实机还需安装程序后，在 OBS 等通过 DirectShow 枚举摄像头的软件中选择 `PCam`，确认画面与 30 fps 输出。
+
 ## 手机实测
 
 1. 空列表、无声、有声、多电脑状态下分别执行单台和全部断开，再重新扫码。

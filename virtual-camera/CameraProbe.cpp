@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <dshow.h>
 #include <mfapi.h>
 #include <mferror.h>
 #include <mfidl.h>
@@ -8,6 +9,7 @@
 #include <fstream>
 #include <vector>
 #include "PcamShared.h"
+#include "PcamDirectShow.h"
 #pragma comment(lib,"ole32")
 #pragma comment(lib,"mf")
 #pragma comment(lib,"mfplat")
@@ -45,8 +47,34 @@ int Contracts(const wchar_t* path){
     return 0;
 }
 
+int DirectShowContracts(const wchar_t* path){
+    HMODULE dll=LoadLibraryW(path);if(!dll)Check(HRESULT_FROM_WIN32(GetLastError()));
+    using Factory=HRESULT(__stdcall*)(REFCLSID,REFIID,void**);
+    auto getFactory=(Factory)GetProcAddress(dll,"DllGetClassObject");if(!getFactory)throw E_FAIL;
+    ComPtr<IClassFactory> factory;Check(getFactory(PCAM_DSHOW_CLSID,__uuidof(IClassFactory),(void**)factory.GetAddressOf()));
+    ComPtr<IBaseFilter> filter;Check(factory->CreateInstance(nullptr,__uuidof(IBaseFilter),(void**)filter.GetAddressOf()));
+    ComPtr<IEnumPins> pins;Check(filter->EnumPins(&pins));
+    ComPtr<IPin> pin;ULONG count=0;Check(pins->Next(1,pin.GetAddressOf(),&count));if(count!=1)throw E_FAIL;
+    PIN_DIRECTION direction;Check(pin->QueryDirection(&direction));if(direction!=PINDIR_OUTPUT)throw E_FAIL;
+    ComPtr<IAMStreamConfig> config;Check(pin->QueryInterface(__uuidof(IAMStreamConfig),(void**)config.GetAddressOf()));
+    int caps=0,size=0;Check(config->GetNumberOfCapabilities(&caps,&size));
+    if(caps!=2||size!=(int)sizeof(VIDEO_STREAM_CONFIG_CAPS))throw E_FAIL;
+    for(int i=0;i<caps;i++){
+        AM_MEDIA_TYPE* type=nullptr;BYTE data[sizeof(VIDEO_STREAM_CONFIG_CAPS)]{};
+        Check(config->GetStreamCaps(i,&type,data));
+        if(!type||!type->pbFormat||type->cbFormat<sizeof(VIDEOINFOHEADER))throw E_FAIL;
+        auto* info=(VIDEOINFOHEADER*)type->pbFormat;
+        if(info->bmiHeader.biWidth!=1280||info->bmiHeader.biHeight!=720||type->lSampleSize==0)throw E_FAIL;
+        if(type->pbFormat)CoTaskMemFree(type->pbFormat);CoTaskMemFree(type);
+    }
+    pin.Reset();pins.Reset();filter.Reset();factory.Reset();FreeLibrary(dll);
+    std::wcout<<L"PASS: DirectShow filter factory, output pin and two 1280x720 media types"<<std::endl;
+    return 0;
+}
+
 int wmain(int argc,wchar_t** argv){try{
     Check(CoInitializeEx(nullptr,COINIT_MULTITHREADED));Check(MFStartup(MF_VERSION));
+    if(argc==3 && wcscmp(argv[1],L"--dshow")==0){int result=DirectShowContracts(argv[2]);MFShutdown();CoUninitialize();return result;}
     if(argc==3 && wcscmp(argv[1],L"--contracts")==0){int result=Contracts(argv[2]);MFShutdown();CoUninitialize();return result;}
     ComPtr<IMFMediaSource> source;bool direct=argc>=4 && wcscmp(argv[1],L"--direct")==0;
     if(direct){

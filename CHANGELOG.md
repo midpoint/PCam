@@ -1,5 +1,9 @@
 # 更新记录
 
+## 未发布
+
+- 虚拟摄像头支持 Windows 10：新增 DirectShow 视频输入滤镜，与 Media Foundation 媒体源共用按用户隔离的帧文件；`MFCreateVirtualCamera` 改为运行时解析，Windows 11 继续使用系统虚拟摄像头接口。Windows 10 上仅使用 Media Foundation 枚举摄像头的软件仍看不到该设备。
+
 ## Windows0.15.2 / Android0.12.7
 
 - 两端编译与测试成功后，自动将安装包和 SHA256 校验文件发布到 GitHub Releases。

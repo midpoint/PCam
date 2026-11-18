@@ -10,6 +10,7 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include "pch.h"
 #include "VirtualCameraMediaSourceActivate.h"
+#include "PcamDirectShow.h"
 
 HINSTANCE   g_hInst;
 
@@ -32,6 +33,11 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 
 bool __stdcall winrt_can_unload_now() noexcept
 {
+    if (!PcamDirectShowCanUnload())
+    {
+        return false;
+    }
+
     if (winrt::get_module_lock())
     {
         return false;
@@ -63,6 +69,11 @@ HRESULT __stdcall DllGetClassObject(GUID const& clsid, GUID const& iid, void** r
         if (clsid == __uuidof(winrt::WindowsSample::implementation::VirtualCameraMediaSourceActivate))
         {
             return winrt::make_self<VirtualCameraMediaSourceActivateFactory>()->QueryInterface(iid, result);
+        }
+
+        if (IsEqualGUID(clsid, PCAM_DSHOW_CLSID))
+        {
+            return PcamDirectShowGetClassObject(iid, result);
         }
 
 #ifdef _WRL_MODULE_H_

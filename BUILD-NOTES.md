@@ -25,6 +25,8 @@
 
 GitHub云端构建使用`.github/workflows/build.yml`，由Windows Server 2022 runner的MSVC与Windows 11 SDK编译原生组件，WIL固定到1.0.250325.1对应提交并核对下载摘要。.NET依赖通过`ci/NuGet.Config`从官方NuGet源还原，不依赖本机`tools/`。本机构建继续使用下列便携工具入口。
 
+虚拟摄像头组件同时包含Media Foundation媒体源和DirectShow视频输入滤镜；`MFCreateVirtualCamera`在运行时从`mfsensorgroup.dll`解析，因此同一DLL可在Windows 10和Windows 11加载。DirectShow滤镜仅使用Windows SDK接口，无需额外库或驱动。
+
 ```powershell
 . ./build-env.ps1
 ./build-windows.ps1

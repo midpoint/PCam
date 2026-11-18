@@ -11,6 +11,9 @@ namespace PhoneCam;
 public static class CameraInstallation
 {
     public const string Clsid = "{E596E156-A65E-489A-A4FB-F2F4B0D23E01}";
+    // Windows 10 uses a DirectShow video input filter instead of MFCreateVirtualCamera.
+    public const string DirectShowClsid = "{3791D0FD-59B4-4DB9-AF2F-2847FCB5CD06}";
+    const string VideoInputCategory = "{860BB310-5D01-11D0-BD3B-00A0C911CE86}";
     // Use the project version so component updates cannot retain an obsolete installation path.
     public static readonly string Version = typeof(CameraInstallation).Assembly.GetName().Version!.ToString(3);
     static readonly SecurityIdentifier Administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
@@ -62,6 +65,10 @@ public static class CameraInstallation
             using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Classes\CLSID\" + Clsid + @"\InprocServer32");
             if (!string.Equals(key?.GetValue(null) as string, InstalledPath, StringComparison.OrdinalIgnoreCase)
                 || !Directory.Exists(FramesDirectory(Sid))) return false;
+            using var directShow = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Classes\CLSID\" + DirectShowClsid + @"\InprocServer32");
+            if (!string.Equals(directShow?.GetValue(null) as string, InstalledPath, StringComparison.OrdinalIgnoreCase)) return false;
+            using var device = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Classes\CLSID\" + VideoInputCategory + @"\Instance\" + DirectShowClsid);
+            if (device == null) return false;
             // Check the actual DLL too; directory name/registration alone do not prove integrity.
             using var file = File.OpenRead(InstalledPath);
             return Convert.ToHexString(SHA256.HashData(file)) == PayloadHash.Value;
